@@ -1,6 +1,8 @@
+use std::env;
+
 use termion::event::Key;
 
-use crate::terminal::Terminal;
+use crate::{terminal::Terminal, Document, Row};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -8,6 +10,7 @@ pub struct Editor {
     should_quit: bool,
     terminal: Terminal,
     cursor_position: Position,
+    document: Document,
 }
 
 impl Editor {
@@ -15,10 +18,8 @@ impl Editor {
         Self { 
             should_quit: false,
             terminal: Terminal::default().expect("Failed to initialized terminal"),
-            cursor_position: Position {
-                x: 0,
-                y: 0,
-            },
+            cursor_position: Position::default(),
+            document: Document::open(&parse_filename()).expect("Fail to parse file"),
         }
     }
 
@@ -91,11 +92,20 @@ impl Editor {
         println!("~{}{}\r", space, welcome_msg)
     }
 
+    pub fn draw_row(&self, row: &Row) {
+        let start: usize = 0;
+        let end = self.terminal.size().width;
+        let row = row.render(start, end as usize);
+        println!("{}\r", row);
+    }
+
     fn draw_rows(&self) {
         let height = self.terminal.size().height;
         for line in 0..height - 1 {
             Terminal::clear_current_line();
-            if line == height / 3 {
+            if let Some(row) = self.document.row(line as usize) {
+                self.draw_row(row);
+            } else if self.document.is_empty() && line == height / 3 {
                 self.draw_welcome_msg();
             } else {
                 println!("~\r");
@@ -111,7 +121,18 @@ fn die(e: std::io::Error) {
     panic!("{}", e);
 }
 
+#[derive(Default)]
 pub struct Position {
     pub x: usize,
     pub y: usize,
+}
+
+fn parse_filename() -> String {
+    let mut args = env::args();
+    let _ = args.next();
+    if let Some(arg) = args.next() {
+        return arg
+    } else {
+        panic!("Please input filename");
+    }
 }
