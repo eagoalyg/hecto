@@ -10,6 +10,7 @@ pub struct Editor {
     should_quit: bool,
     terminal: Terminal,
     cursor_position: Position,
+    offset: Position,
     document: Document,
 }
 
@@ -19,6 +20,7 @@ impl Editor {
             should_quit: false,
             terminal: Terminal::default().expect("Failed to initialized terminal"),
             cursor_position: Position::default(),
+            offset: Position::default(),
             document: Document::open(&parse_filename()).expect("Fail to parse file"),
         }
     }
@@ -45,7 +47,10 @@ impl Editor {
             println!("Goodbye.\r");
         } else {
             self.draw_rows();
-            Terminal::cursor_position(&self.cursor_position);
+            Terminal::cursor_position(&Position {
+                x: self.cursor_position.x.saturating_sub(self.offset.x),
+                y: self.cursor_position.y.saturating_sub(self.offset.y), 
+            });
         }
         Terminal::cursor_show();
         Terminal::flush()
@@ -58,25 +63,62 @@ impl Editor {
             Key::Left | Key::Right | Key::Up | Key::PageUp | Key::Down | Key::PageDown => self.cursor_move(pressed_key),
             _ => (),
         }
+        self.scroll();
         Ok(())
+    }
+
+    fn scroll(&mut self) {
+        let Position { x, y } = self.cursor_position;
+        let width = self.terminal.size().width as usize;
+        let height = self.terminal.size().height as usize;
+
+        let offset = &mut self.offset;
+        if y < offset.y {
+            offset.y = y;
+        } else if y >= offset.y.saturating_add(height) {
+            offset.y = y.saturating_sub(height).saturating_add(1);
+        }
+        if x < offset.x {
+            offset.x = x;
+        } else if x >= offset.x.saturating_add(width) {
+            offset.x = x.saturating_sub(width).saturating_add(1);
+        }
     }
 
     fn cursor_move(&mut self, key: Key) {
         let Position {mut x, mut y} = self.cursor_position;
+        let mut width = if let Some(row) = self.document.row(self.cursor_position.y) {
+            row.len()
+        } else {
+            0
+        };
+
         match key {
             Key::Left => x = x.saturating_sub(1),
             Key::Right => {
-                if x < self.terminal.size().width as usize {
+                if x < width {
                     x = x.saturating_add(1);
                 }
             },
             Key::Down | Key::PageDown => {
-                if y < self.terminal.size().height as usize {
+                let height = self.document.len();
+                if y < height {
                     y = y.saturating_add(1);
                 }
             },
             Key::Up | Key::PageUp => y = y.saturating_sub(1),
             _ => (),
+        }
+
+        // fix move the row, cursor position bigger than current row's width
+        width = if let Some(row) = self.document.row(y) {
+            row.len()
+        } else {
+            0
+        };
+        if width < x {
+            x = width;
+            self.offset.x = 0;
         }
 
         self.cursor_position = Position {x, y};
@@ -93,9 +135,9 @@ impl Editor {
     }
 
     pub fn draw_row(&self, row: &Row) {
-        let start: usize = 0;
-        let end = self.terminal.size().width;
-        let row = row.render(start, end as usize);
+        let start = self.offset.x;
+        let end = self.terminal.size().width as usize + self.offset.x;
+        let row = row.render(start, end);
         println!("{}\r", row);
     }
 
@@ -103,7 +145,7 @@ impl Editor {
         let height = self.terminal.size().height;
         for line in 0..height - 1 {
             Terminal::clear_current_line();
-            if let Some(row) = self.document.row(line as usize) {
+            if let Some(row) = self.document.row(line as usize + self.offset.y) {
                 self.draw_row(row);
             } else if self.document.is_empty() && line == height / 3 {
                 self.draw_welcome_msg();
