@@ -79,4 +79,8 @@ impl Row {
 
         Self::from(&after[..])
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.string.as_bytes()
+    }
 }

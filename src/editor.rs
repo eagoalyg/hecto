@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, time::{Instant, Duration}};
 
 use termion::{event::Key, color};
 
@@ -8,22 +8,43 @@ const STATUS_FG_COLOR: color::Rgb = color::Rgb(63, 63, 63);
 const STATUS_BG_COLOR: color::Rgb = color::Rgb(239, 239, 239);
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+struct StatusMessage {
+    text: String,
+    time: Instant,
+}
+
+impl StatusMessage {
+    fn from(msg: String) -> Self {
+        Self { text: msg, time: Instant::now() } 
+    } 
+}
+
 pub struct Editor {
     should_quit: bool,
     terminal: Terminal,
     cursor_position: Position,
     offset: Position,
     document: Document,
+    status_message: StatusMessage,
 }
 
 impl Editor {
     pub fn default() -> Self {
+        let mut status_message = String::from("HELP: Ctrl-Q = quit | Ctrl-S = save");
+        let document = if let Ok(document) = Document::open(&parse_filename()) {
+            document
+        } else {
+            status_message = format!("ERR: Could not open file: {}", &parse_filename());
+            Document::default()
+        };
+
         Self { 
             should_quit: false,
             terminal: Terminal::default().expect("Failed to initialized terminal"),
             cursor_position: Position::default(),
             offset: Position::default(),
-            document: Document::open(&parse_filename()).expect("Fail to parse file"),
+            document: document,
+            status_message: StatusMessage::from(status_message),
         }
     }
 
@@ -60,10 +81,28 @@ impl Editor {
         Terminal::flush()
     }
 
+    fn save(&mut self) {
+        if self.document.filename.is_none() {
+            let result = self.prompt("Save as: ").unwrap_or(None);
+            if result.is_none() {
+                self.status_message = StatusMessage::from("Save aborted".to_string());
+                return;
+            }
+            self.document.filename = result;
+        }
+    
+        if self.document.save().is_ok() {
+            self.status_message = StatusMessage::from("File saved successfully.".to_string());
+        } else {
+            self.status_message = StatusMessage::from("Error writing file!".to_string());
+        }
+    }
+
     fn process_keypress(&mut self) -> Result<(), std::io::Error> {
         let pressed_key = Terminal::read_key()?;
         match pressed_key {
             Key::Ctrl('c') => self.should_quit = true,
+            Key::Ctrl('s') => self.save(),
             Key::Char(c) => {
                 self.document.insert(&self.cursor_position, c);
                 self.cursor_move(Key::Right);
@@ -213,6 +252,42 @@ impl Editor {
 
     fn draw_message_bar(&self) {
         Terminal::clear_current_line(); 
+        let message = &self.status_message;
+        if Instant::now() - message.time < Duration::new(5, 0) {
+            let mut text = message.text.clone();
+            text.truncate(self.terminal.size().width as usize);
+            print!("{}", text);
+        }
+    }
+
+    fn prompt(&mut self, prompt: &str) -> Result<Option<String>, std::io::Error>{
+        let mut result = String::new();
+        loop {
+            self.status_message = StatusMessage::from(format!("{}{}", prompt, result));
+            self.refresh_screen()?;
+            match Terminal::read_key()? {
+                Key::Backspace => {
+                    result.truncate(result.len() - 1);
+                }
+                Key::Char('\n') => break,
+                Key::Char(c) => {
+                    if !c.is_control() {
+                        result.push(c);
+                    }
+                }
+                Key::Esc => {
+                    result.truncate(0);
+                    break;
+                }
+                _ => ()
+            }
+        } 
+
+        self.status_message = StatusMessage::from(String::new());
+        match result.len() {
+            0 => Ok(None),
+            _ => Ok(Some(result)),
+        }
     }
 }
 
