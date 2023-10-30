@@ -31,7 +31,26 @@ impl Document {
         self.rows.len() 
     }
 
+    pub fn insert_new_line(&mut self, at: &Position) {
+        if at.y > self.len() {
+            return;
+        }
+
+        if at.y == self.len() {
+            self.rows.push(Row::default());
+            return;
+        }
+
+        let new_line = self.rows.get_mut(at.y).unwrap().split(at.x);
+        self.rows.insert(at.y + 1, new_line);
+    }
+
     pub fn insert(&mut self, at: &Position, c: char) {
+        if c == '\n' {
+            self.insert_new_line(at);
+            return;
+        }
+
         if at.y == self.len() {
             let mut row = Row::default();
             row.insert(at.x, c);

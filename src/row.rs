@@ -47,8 +47,8 @@ impl Row {
             result.push_str(&after);
             self.string = result;
 
-            self.update_len();
         }
+        self.update_len();
     }
 
     pub fn delete(&mut self, at: usize) {
@@ -68,5 +68,15 @@ impl Row {
     pub fn append(&mut self, next_row: &Row) {
         self.string = format!("{}{}", self.string, next_row.string);
         self.update_len();
+    }
+
+    pub fn split(&mut self, x: usize) -> Self {
+        let before = self.string.graphemes(true).take(x).collect();
+        let after: String = self.string.graphemes(true).skip(x).collect();
+
+        self.string = before;
+        self.update_len();
+
+        Self::from(&after[..])
     }
 }

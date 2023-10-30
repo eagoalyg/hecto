@@ -66,7 +66,6 @@ impl Editor {
             Key::Ctrl('c') => self.should_quit = true,
             Key::Char(c) => {
                 self.document.insert(&self.cursor_position, c);
-                // got wrong
                 self.cursor_move(Key::Right);
             }
             Key::Left | Key::Right | Key::Up | Key::PageUp | Key::Down | Key::PageDown => self.cursor_move(pressed_key),
