@@ -64,7 +64,18 @@ impl Editor {
         let pressed_key = Terminal::read_key()?;
         match pressed_key {
             Key::Ctrl('c') => self.should_quit = true,
+            Key::Char(c) => {
+                self.document.insert(&self.cursor_position, c);
+                // got wrong
+                self.cursor_move(Key::Right);
+            }
             Key::Left | Key::Right | Key::Up | Key::PageUp | Key::Down | Key::PageDown => self.cursor_move(pressed_key),
+            Key::Delete | Key::Backspace => {
+                if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
+                    self.cursor_move(Key::Left);
+                    self.document.delete(&self.cursor_position);
+                }
+            }
             _ => (),
         }
         self.scroll();
