@@ -6,6 +6,7 @@ use crate::{Row, editor::Position};
 pub struct Document {
     rows: Vec<Row>,
     pub filename: Option<String>,
+    dirty: bool,
 }
 
 impl Document {
@@ -18,6 +19,7 @@ impl Document {
         Ok(Document { 
             rows,
             filename: Some(filename.to_string()),
+            dirty: false,
         })
     }
 
@@ -34,10 +36,6 @@ impl Document {
     }
 
     pub fn insert_new_line(&mut self, at: &Position) {
-        if at.y > self.len() {
-            return;
-        }
-
         if at.y == self.len() {
             self.rows.push(Row::default());
             return;
@@ -48,6 +46,12 @@ impl Document {
     }
 
     pub fn insert(&mut self, at: &Position, c: char) {
+        if at.y > self.len() {
+            return;
+        }else {
+            self.dirty = true;
+        }
+
         if c == '\n' {
             self.insert_new_line(at);
             return;
@@ -76,9 +80,11 @@ impl Document {
             let row = self.rows.get_mut(at.y).unwrap();
             row.delete(at.x)
         }
+
+        self.dirty = true;
     }
 
-    pub fn save(&self) -> Result<(), std::io::Error> {
+    pub fn save(&mut self) -> Result<(), std::io::Error> {
         
         if let Some(filename) = &self.filename {
             let mut file = fs::File::create(filename)?;
@@ -87,8 +93,14 @@ impl Document {
                 file.write_all(row.as_bytes())?;
                 file.write_all(b"\n")?;
             }
+
+            self.dirty = false;
         }
 
         Ok(())
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
     }
 }

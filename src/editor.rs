@@ -7,6 +7,7 @@ use crate::{terminal::Terminal, Document, Row};
 const STATUS_FG_COLOR: color::Rgb = color::Rgb(63, 63, 63);
 const STATUS_BG_COLOR: color::Rgb = color::Rgb(239, 239, 239);
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const QUIT_TIME: u8 = 3;
 
 struct StatusMessage {
     text: String,
@@ -26,6 +27,7 @@ pub struct Editor {
     offset: Position,
     document: Document,
     status_message: StatusMessage,
+    quit_time: u8,
 }
 
 impl Editor {
@@ -45,6 +47,7 @@ impl Editor {
             offset: Position::default(),
             document: document,
             status_message: StatusMessage::from(status_message),
+            quit_time: QUIT_TIME,
         }
     }
 
@@ -101,7 +104,11 @@ impl Editor {
     fn process_keypress(&mut self) -> Result<(), std::io::Error> {
         let pressed_key = Terminal::read_key()?;
         match pressed_key {
-            Key::Ctrl('c') => self.should_quit = true,
+            Key::Ctrl('c') => {
+                if self.confirm_quit()? {
+                    self.should_quit = true;
+                }
+            }
             Key::Ctrl('s') => self.save(),
             Key::Char(c) => {
                 self.document.insert(&self.cursor_position, c);
@@ -227,13 +234,23 @@ impl Editor {
     fn draw_status_bar(&self) {
         let mut status;
         let width = self.terminal.size().width as usize;
+        let modified_indicator = if self.document.is_dirty() {
+            " (modified)"
+        } else {
+            ""
+        };
 
         let mut filename = "No Name".to_string();
         if let Some(file_name) = self.document.filename.clone() {
             filename = file_name.to_string();
             filename.truncate(20);
         }
-        status = format!("{} - {} lines", filename, self.document.len());
+        status = format!(
+            "{} - {} lines{}",
+            filename,
+            self.document.len(),
+            modified_indicator,
+        );
 
         let line_indicator = format!("{}/{}", self.cursor_position.y + 1, self.document.len());
         
@@ -287,6 +304,36 @@ impl Editor {
         match result.len() {
             0 => Ok(None),
             _ => Ok(Some(result)),
+        }
+    }
+
+    fn confirm_quit(&mut self) -> Result<bool, std::io::Error> {
+        loop {
+            if !self.document.is_dirty() || self.quit_time <= 0 {
+                return Ok(true);
+            }
+
+            self.status_message = StatusMessage::from(format!(
+                "WARNING! File has unsaved changes. Press Ctrl-C {} more times to quit or just press Ctrl-S to save.",
+                self.quit_time
+            ));
+            self.refresh_screen()?;
+
+            let key = Terminal::read_key()?;
+            match key {
+                Key::Ctrl('c') => self.quit_time = self.quit_time - 1,
+                Key::Ctrl('s') => {
+                    self.save();
+                    self.quit_time = QUIT_TIME;
+                    return Ok(false);
+                }
+                _ => {
+                    self.status_message = StatusMessage::from("WARNING! quit aborted".to_string());
+                    self.refresh_screen()?;
+                    self.quit_time = QUIT_TIME;
+                    return Ok(false);
+                }
+            }
         }
     }
 }
